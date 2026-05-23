@@ -21,10 +21,10 @@ api.interceptors.request.use(
     if (token) {
       try {
         const parsed = JSON.parse(token);
-        console.log('Parsed auth storage:', parsed);
         if (parsed.state?.user?.token) {
           config.headers.Authorization = `Bearer ${parsed.state.user.token}`;
-          console.log('Authorization header set:', config.headers.Authorization);
+          console.log('Authorization header set:', config.url);
+          console.log(config.data)
         } else {
           console.log('No token found in parsed state');
         }

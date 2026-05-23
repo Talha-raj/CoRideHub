@@ -1,14 +1,18 @@
 import Vehicle from '../models/vehicleModel.js';
 
+const TYPE_CAPACITY = { sedan: 4, suv: 6, hatchback: 4, van: 8 };
+
 // Create or update vehicle for a user
 export const createOrUpdateVehicle = async (req, res) => {
   try {
-    const { type, model, plateNumber, year, color } = req.body;
+    const { type, model, plateNumber, year, color, capacity } = req.body;
     const userId = req.user.id;
 
     if (!type || !model || !plateNumber) {
       return res.status(400).json({ message: 'Please provide type, model and plate number' });
     }
+
+    const resolvedCapacity = capacity ?? TYPE_CAPACITY[type] ?? 4;
 
     // Check if vehicle already exists for this user
     let vehicle = await Vehicle.findOne({ userId });
@@ -20,6 +24,7 @@ export const createOrUpdateVehicle = async (req, res) => {
       vehicle.plateNumber = plateNumber;
       vehicle.year = year || vehicle.year;
       vehicle.color = color || vehicle.color;
+      vehicle.capacity = resolvedCapacity;
       await vehicle.save();
     } else {
       // Create new vehicle
@@ -30,6 +35,7 @@ export const createOrUpdateVehicle = async (req, res) => {
         plateNumber,
         year,
         color,
+        capacity: resolvedCapacity,
       });
     }
 

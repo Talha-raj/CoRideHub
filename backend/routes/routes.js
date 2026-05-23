@@ -5,7 +5,9 @@ import {
   getRoutes,
   searchRoutes,
   addDeparture,
+  completeDeparture,
   updateLeavingStatus,
+  updateDriverLocation,
   deleteRoute,
   getRouteById,
 } from '../controllers/routeController.js';
@@ -18,7 +20,11 @@ router.get('/routes', authMiddleware, getRoutes);
 router.get('/routes/search', authMiddleware, searchRoutes);
 router.get('/routes/:id', authMiddleware, getRouteById);
 router.post('/routes/:id/departure', authMiddleware, addDeparture);
+router.patch('/routes/:id/departure/complete', authMiddleware, completeDeparture);
 router.patch('/routes/:id/leaving', authMiddleware, updateLeavingStatus);
 router.delete('/routes/:id', authMiddleware, deleteRoute);
+
+// Driver live location push (called every ~8 s while tracking is active)
+router.post('/location/update', authMiddleware, updateDriverLocation);
 
 export default router;

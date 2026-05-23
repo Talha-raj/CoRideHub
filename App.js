@@ -18,6 +18,7 @@ import SavePlaceScreen from './src/screens/User/SavePlace';
 import ViewAllPlacesScreen from './src/screens/User/ViewAllPlaces';
 import BookRideScreen from './src/screens/User/BookRide';
 import RideDetailsScreen from './src/screens/User/RideDetails';
+import AllRidesScreen from './src/screens/User/AllRides';
 import RequestDetailsScreen from './src/screens/proider/RequestDetails';
 import ProviderRoutesScreen from './src/screens/proider/ProviderRoutes';
 import { useSession } from './src/store/useSession';
@@ -54,6 +55,7 @@ function Navigation() {
         <Stack.Screen name="ViewAllPlaces" component={ViewAllPlacesScreen} />
         <Stack.Screen name="BookRide" component={BookRideScreen} />
         <Stack.Screen name="RideDetails" component={RideDetailsScreen} />
+        <Stack.Screen name="AllRides" component={AllRidesScreen} />
         <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} />
         <Stack.Screen name="ProviderRoutes" component={ProviderRoutesScreen} />
       </Stack.Navigator>

@@ -1,30 +1,27 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import MaterialDesignIcons from '@react-native-vector-icons/material-design-icons';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  ScrollView,
-  FlatList,
-  Modal,
   ActivityIndicator,
   Alert,
-  PermissionsAndroid,
-  Platform,
+  FlatList,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import Geolocation from '@react-native-community/geolocation';
-import MaterialDesignIcons from '@react-native-vector-icons/material-design-icons';
+import api from '../../config/api';
 import {
   COLORS,
   FONTSIZES,
-  SIZES,
   RADIUS,
   SHADOWS,
+  SIZES,
 } from '../../constants/theme';
-import api from '../../config/api';
-import { GOOGLE_MAPS_API_KEY } from '../../utils/Creds';
 import { useSession } from '../../store/useSession';
+import { GOOGLE_MAPS_API_KEY } from '../../utils/Creds';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,15 +138,23 @@ const StopChip = ({ name, isPickup, isDropoff }) => (
   </View>
 );
 
+const seatColor = n => {
+  if (n <= 0) return COLORS.error;
+  if (n <= 2) return COLORS.warning;
+  return COLORS.success;
+};
+
 const RouteCard = ({ route, onJoin }) => {
   const pickupMatch = route.pickupDistance !== undefined;
   const dropoffMatch = route.dropoffDistance !== undefined;
+  const seats = route.seatsLeft ?? 0;
+  const isFull = seats <= 0;
 
   const today = todayDateStr();
   const todayDepartures = (route.departures || []).filter(d => d.date === today);
 
   return (
-    <View style={styles.routeCard}>
+    <View style={[styles.routeCard, isFull && styles.routeCardFull]}>
       {/* Route name + status */}
       <View style={styles.routeCardHeader}>
         <View style={styles.routeNameBadge}>
@@ -158,12 +163,25 @@ const RouteCard = ({ route, onJoin }) => {
             {route.routeName}
           </Text>
         </View>
-        {route.isLeaving && (
-          <View style={styles.leavingBadge}>
-            <View style={styles.leavingDot} />
-            <Text style={styles.leavingText}>Leaving soon</Text>
+        <View style={styles.routeCardBadges}>
+          {/* Seats left pill */}
+          <View style={[styles.seatsPill, { backgroundColor: seatColor(seats) + '18' }]}>
+            <MaterialDesignIcons
+              name={isFull ? 'seat-passenger' : 'seat'}
+              size={13}
+              color={seatColor(seats)}
+            />
+            <Text style={[styles.seatsText, { color: seatColor(seats) }]}>
+              {isFull ? 'Full' : `${seats} seat${seats !== 1 ? 's' : ''} left`}
+            </Text>
           </View>
-        )}
+          {route.isLeaving && (
+            <View style={styles.leavingBadge}>
+              <View style={styles.leavingDot} />
+              <Text style={styles.leavingText}>Leaving soon</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* From → To */}
@@ -272,18 +290,21 @@ const RouteCard = ({ route, onJoin }) => {
         )}
       </View>
 
-      {/* Join button */}
-      <TouchableOpacity
-        style={styles.joinButton}
-        onPress={() => onJoin(route)}
-      >
-        <MaterialDesignIcons
-          name="car-arrow-right"
-          size={18}
-          color={COLORS.white}
-        />
-        <Text style={styles.joinButtonText}>Join Ride</Text>
-      </TouchableOpacity>
+      {/* Join button / full notice */}
+      {isFull ? (
+        <View style={styles.fullNotice}>
+          <MaterialDesignIcons name="seat-passenger" size={16} color={COLORS.error} />
+          <Text style={styles.fullNoticeText}>No seats available — this ride is full</Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.joinButton}
+          onPress={() => onJoin(route)}
+        >
+          <MaterialDesignIcons name="car-arrow-right" size={18} color={COLORS.white} />
+          <Text style={styles.joinButtonText}>Join Ride</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -294,7 +315,11 @@ const BookRideScreen = ({ navigation }) => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState(null);
+  const [hasActiveRide, setHasActiveRide] = useState(false);
   const userCurrentLocation = useSession(state => state.currentLocation);
+  // Ref so requestAndGetLocation always reads the latest value without a dep
+  const userLocationRef = useRef(userCurrentLocation);
+  useEffect(() => { userLocationRef.current = userCurrentLocation; }, [userCurrentLocation]);
   const [places, setPlaces] = useState([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(true);
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -319,12 +344,16 @@ const BookRideScreen = ({ navigation }) => {
     setLocationError(null);
 
     try {
-      let name = `${userCurrentLocation[1].toFixed(
-        5,
-      )}, ${userCurrentLocation[0].toFixed(5)}`;
+      const loc = userLocationRef.current;
+      if (!loc || loc.length < 2) {
+        setLocationError('Location unavailable. Tap to retry.');
+        setIsLocating(false);
+        return;
+      }
+      let name = `${loc[1].toFixed(5)}, ${loc[0].toFixed(5)}`;
       try {
         const resp = await fetch(
-          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${userCurrentLocation[1]},${userCurrentLocation[0]}&key=${GOOGLE_MAPS_API_KEY}`,
+          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${loc[1]},${loc[0]}&key=${GOOGLE_MAPS_API_KEY}`,
         );
         const data = await resp.json();
         if (data.status === 'OK' && data.results?.length > 0) {
@@ -332,11 +361,7 @@ const BookRideScreen = ({ navigation }) => {
         }
       } catch (_) {}
 
-      setCurrentLocation({
-        lat: userCurrentLocation[1],
-        lng: userCurrentLocation[0],
-        name,
-      });
+      setCurrentLocation({ lat: loc[1], lng: loc[0], name });
       setIsLocating(false);
     } catch (err) {
       setLocationError('Location unavailable. Tap to retry.');
@@ -361,6 +386,10 @@ const BookRideScreen = ({ navigation }) => {
   useEffect(() => {
     requestAndGetLocation();
     fetchPlaces();
+    // Check whether user already has an active ride so Join can be blocked
+    api.get('/rides/active').then(res => {
+      if (res.data.success && res.data.ride) setHasActiveRide(true);
+    }).catch(() => {});
   }, [requestAndGetLocation, fetchPlaces]);
 
   // ── route search ────────────────────────────────────────────────────────────
@@ -411,6 +440,13 @@ const BookRideScreen = ({ navigation }) => {
   // ── join ────────────────────────────────────────────────────────────────────
 
   const handleJoinRide = route => {
+    if (hasActiveRide) {
+      Alert.alert(
+        'Active Ride',
+        'You already have an active ride. Complete or cancel it before booking a new one.',
+      );
+      return;
+    }
     setJoiningRoute(route);
     setPickupStop(null);
     setDropoffStop(null);
@@ -991,11 +1027,50 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOWS.small,
   },
+  routeCardFull: {
+    borderColor: COLORS.error + '40',
+    backgroundColor: COLORS.error + '04',
+  },
   routeCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: SIZES.md,
+    gap: SIZES.sm,
+  },
+  routeCardBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SIZES.xs,
+    flexShrink: 1,
+  },
+  seatsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SIZES.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+  },
+  seatsText: {
+    fontSize: FONTSIZES.xs,
+    fontWeight: '700',
+  },
+  fullNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SIZES.sm,
+    backgroundColor: COLORS.error + '10',
+    borderRadius: RADIUS.md,
+    paddingVertical: SIZES.sm + 2,
+    borderWidth: 1,
+    borderColor: COLORS.error + '30',
+  },
+  fullNoticeText: {
+    fontSize: FONTSIZES.sm,
+    fontWeight: '600',
+    color: COLORS.error,
   },
   routeNameBadge: {
     flexDirection: 'row',

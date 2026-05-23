@@ -1,5 +1,7 @@
 import Route from '../models/routeModel.js';
 import Stop from '../models/stopModel.js';
+import Vehicle from '../models/vehicleModel.js';
+import { getIO } from '../socket/index.js';
 
 const haversineKm = (lat1, lng1, lat2, lng2) => {
   const R = 6371;
@@ -23,6 +25,10 @@ export const createRoute = async (req, res) => {
       return res.status(400).json({ message: 'Please provide route name, from and to destinations with coordinates' });
     }
 
+    // Derive seat count from driver's vehicle (fall back to 4 if no vehicle found)
+    const vehicle = await Vehicle.findOne({ userId: providerId });
+    const seatsLeft = vehicle?.capacity ?? 4;
+
     // Create route
     const route = await Route.create({
       providerId,
@@ -31,6 +37,7 @@ export const createRoute = async (req, res) => {
       to,
       isActive: true,
       isLeaving: false,
+      seatsLeft,
     });
 
     // Create stops if provided
@@ -136,7 +143,7 @@ export const deleteRoute = async (req, res) => {
 export const addDeparture = async (req, res) => {
   try {
     const { id } = req.params;
-    const { date, time } = req.body;
+    const { date, time, isLeaving = false } = req.body;
     const providerId = req.user.id;
 
     if (!date || !time) {
@@ -148,14 +155,75 @@ export const addDeparture = async (req, res) => {
       return res.status(404).json({ message: 'Route not found' });
     }
 
-    route.departures.push({ date, time });
-    route.isLeaving = true;
+    route.departures.push({ date, time, isLeaving, isCompleted: false });
+    if (isLeaving) route.isLeaving = true;
     await route.save();
 
     const updated = await Route.findById(id).populate('stops');
     res.json({ success: true, route: updated });
   } catch (error) {
     console.log('Add departure error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Mark today's active departure as completed and clear driver location
+export const completeDeparture = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const providerId = req.user.id;
+
+    const route = await Route.findOne({ _id: id, providerId });
+    if (!route) return res.status(404).json({ message: 'Route not found' });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dep = route.departures.find(d => d.isLeaving && d.date === today && !d.isCompleted);
+    if (dep) {
+      dep.isLeaving   = false;
+      dep.isCompleted = true;
+    }
+
+    route.isLeaving    = false;
+    route.driverLocation = undefined;
+    await route.save();
+
+    const updated = await Route.findById(id).populate('stops');
+    res.json({ success: true, route: updated });
+  } catch (error) {
+    console.log('Complete departure error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Driver: push live GPS position for an active route
+export const updateDriverLocation = async (req, res) => {
+  try {
+    const { routeId, latitude, longitude, accuracy, speed, heading, timestamp } = req.body;
+    const providerId = req.user.id;
+
+    if (!routeId || latitude == null || longitude == null) {
+      return res.status(400).json({ message: 'routeId, latitude, and longitude are required' });
+    }
+
+    const route = await Route.findOneAndUpdate(
+      { _id: routeId, providerId },
+      { driverLocation: { latitude, longitude, accuracy, speed, heading, timestamp } },
+    );
+
+    if (!route) return res.status(404).json({ message: 'Route not found' });
+
+    // Relay to riders via socket (covers background driver — REST path bypasses JS socket)
+    getIO()?.to(`route:${routeId}`).emit('driver-location', {
+      latitude, longitude,
+      accuracy:  accuracy  ?? null,
+      speed:     speed     ?? null,
+      heading:   heading   ?? null,
+      timestamp: timestamp ?? Date.now(),
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.log('Update driver location error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

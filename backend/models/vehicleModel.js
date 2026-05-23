@@ -8,6 +8,7 @@ const vehicleSchema = new mongoose.Schema(
     plateNumber: { type: String, required: true },
     year: String,
     color: String,
+    capacity: { type: Number, default: 4 },
   },
   { timestamps: true },
 );

@@ -14,7 +14,7 @@ import {
   setLocationCallback,
   setErrorCallback,
   setupLocationListeners,
-} from '../../utils/locationService';
+} from '../../services/locationService';
 
 /**
  * Example Component: Location Tracking
