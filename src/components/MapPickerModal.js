@@ -48,13 +48,13 @@ const MapPickerModal = ({
   title = 'Select Location',
   initialCoordinate,
 }) => {
-  const [selectedCoords, setSelectedCoords]   = useState(null);
+  const [selectedCoords, setSelectedCoords] = useState(null);
   const [selectedAddress, setSelectedAddress] = useState('');
-  const [searchQuery, setSearchQuery]         = useState('');
-  const [searchResults, setSearchResults]     = useState([]);
-  const [isSearching, setIsSearching]         = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  const cameraRef  = useRef(null);
+  const cameraRef = useRef(null);
   const debounceRef = useRef(null);
 
   // Reset all state whenever the modal closes so next open is fresh
@@ -105,30 +105,36 @@ const MapPickerModal = ({
 
   // ── Result selection ────────────────────────────────────────────────────────
 
-  const handleSelectResult = useCallback(result => {
-    Keyboard.dismiss();
-    const coords = [result.longitude, result.latitude];
-    setSelectedCoords(coords);
-    setSelectedAddress(result.address);
-    clearSearch();
+  const handleSelectResult = useCallback(
+    result => {
+      Keyboard.dismiss();
+      const coords = [result.longitude, result.latitude];
+      setSelectedCoords(coords);
+      setSelectedAddress(result.address);
+      clearSearch();
 
-    cameraRef.current?.setCamera({
-      centerCoordinate: coords,
-      zoomLevel: 14,
-      animationDuration: 800,
-    });
-  }, [clearSearch]);
+      cameraRef.current?.setCamera({
+        centerCoordinate: coords,
+        zoomLevel: 14,
+        animationDuration: 800,
+      });
+    },
+    [clearSearch],
+  );
 
   // ── Map tap (fallback) ──────────────────────────────────────────────────────
 
-  const handleMapTap = useCallback(async feature => {
-    const [lng, lat] = feature.geometry.coordinates;
-    setSelectedCoords([lng, lat]);
-    clearSearch();
+  const handleMapTap = useCallback(
+    async feature => {
+      const [lng, lat] = feature.geometry.coordinates;
+      setSelectedCoords([lng, lat]);
+      clearSearch();
 
-    const { address } = await reverseGeocode(lat, lng);
-    setSelectedAddress(address);
-  }, [clearSearch]);
+      const { address } = await reverseGeocode(lat, lng);
+      setSelectedAddress(address);
+    },
+    [clearSearch],
+  );
 
   // ── Confirm ─────────────────────────────────────────────────────────────────
 
@@ -150,7 +156,6 @@ const MapPickerModal = ({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <SafeAreaView style={styles.container}>
-
         {/* ── Header ── */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={handleClose}>
@@ -171,8 +176,11 @@ const MapPickerModal = ({
           >
             <MapboxGL.Camera
               ref={cameraRef}
-              zoomLevel={12}
-              centerCoordinate={initialCoordinate}
+              defaultSettings={{
+                centerCoordinate: initialCoordinate,
+                zoomLevel: 12,
+              }}
+              animationMode="none"
             />
             {selectedCoords && (
               <MapboxGL.PointAnnotation
@@ -210,8 +218,15 @@ const MapPickerModal = ({
                 autoCorrect={false}
               />
               {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <MaterialDesignIcons name="close" size={18} color={COLORS.textMuted} />
+                <TouchableOpacity
+                  onPress={clearSearch}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <MaterialDesignIcons
+                    name="close"
+                    size={18}
+                    color={COLORS.textMuted}
+                  />
                 </TouchableOpacity>
               )}
             </View>
@@ -242,7 +257,8 @@ const MapPickerModal = ({
                       <TouchableOpacity
                         style={[
                           styles.resultItem,
-                          index < searchResults.length - 1 && styles.resultItemBorder,
+                          index < searchResults.length - 1 &&
+                            styles.resultItemBorder,
                         ]}
                         onPress={() => handleSelectResult(item)}
                         activeOpacity={0.7}
@@ -274,7 +290,11 @@ const MapPickerModal = ({
         <View style={styles.footer}>
           {selectedAddress ? (
             <View style={styles.selectedAddressRow}>
-              <MaterialDesignIcons name="map-marker" size={20} color={COLORS.accent} />
+              <MaterialDesignIcons
+                name="map-marker"
+                size={20}
+                color={COLORS.accent}
+              />
               <Text style={styles.selectedAddressText} numberOfLines={2}>
                 {selectedAddress}
               </Text>
@@ -285,14 +305,16 @@ const MapPickerModal = ({
             </Text>
           )}
           <TouchableOpacity
-            style={[styles.confirmBtn, !selectedCoords && styles.confirmBtnDisabled]}
+            style={[
+              styles.confirmBtn,
+              !selectedCoords && styles.confirmBtnDisabled,
+            ]}
             onPress={handleConfirm}
             disabled={!selectedCoords}
           >
             <Text style={styles.confirmBtnText}>Confirm Location</Text>
           </TouchableOpacity>
         </View>
-
       </SafeAreaView>
     </Modal>
   );

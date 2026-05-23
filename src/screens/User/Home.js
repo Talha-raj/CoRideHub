@@ -1,24 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import MaterialDesignIcons from '@react-native-vector-icons/material-design-icons';
-import { useAuthStore } from '../../store/authStore';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import api from '../../config/api';
 import {
   COLORS,
   FONTSIZES,
-  SIZES,
   RADIUS,
   SHADOWS,
+  SIZES,
 } from '../../constants/theme';
-import api from '../../config/api';
+import { useAuthStore } from '../../store/authStore';
 import { responsiveFont } from '../../utils/responsive';
 
 const RIDE_STATUS_CFG = {
@@ -39,26 +39,39 @@ const UserDashboard = ({ navigation }) => {
   const [places, setPlaces] = useState([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(true);
   const [activeRides, setActiveRides] = useState([]);
+  const [recentRides, setRecentRides] = useState([]);
+  const [totalRides, setTotalRides] = useState(0);
+  const [isLoadingRides, setIsLoadingRides] = useState(true);
 
-  const fetchActiveRides = useCallback(async () => {
+  const fetchRides = useCallback(async () => {
+    setIsLoadingRides(true);
     try {
       const res = await api.get('/rides/user');
       if (res.data.success) {
-        const active = res.data.rides.filter(
+        const all = res.data.rides;
+        const active = all.filter(
           r =>
             r.rideRequestStatus !== 'Rejected' && r.rideStatus !== 'Completed',
         );
+        const past = all.filter(
+          r =>
+            r.rideStatus === 'Completed' || r.rideRequestStatus === 'Rejected',
+        );
         setActiveRides(active);
+        setTotalRides(past.length);
+        setRecentRides(past.slice(0, 2));
       }
     } catch (err) {
       console.log('Error fetching rides:', err);
+    } finally {
+      setIsLoadingRides(false);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      fetchActiveRides();
-    }, [fetchActiveRides]),
+      fetchRides();
+    }, [fetchRides]),
   );
 
   useFocusEffect(
@@ -88,11 +101,6 @@ const UserDashboard = ({ navigation }) => {
     logout();
     navigation.replace('Login');
   };
-
-  const recentRides = [
-    { id: 1, from: 'Downtown', to: 'Airport', date: 'Today', price: '$24' },
-    { id: 2, from: 'Home', to: 'Office', date: 'Yesterday', price: '$12' },
-  ];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -205,31 +213,94 @@ const UserDashboard = ({ navigation }) => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Rides</Text>
-          {recentRides.map(ride => (
-            <View key={ride.id} style={styles.rideCard}>
-              <View style={styles.rideIconContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Rides</Text>
+            {totalRides > 2 && (
+              <TouchableOpacity
+                style={styles.seeAllBtn}
+                onPress={() => navigation.navigate('AllRides')}
+              >
+                <Text style={styles.seeAllText}>See All</Text>
                 <MaterialDesignIcons
-                  name="car"
-                  size={20}
+                  name="chevron-right"
+                  size={16}
                   color={COLORS.accent}
                 />
-              </View>
-              <View style={styles.rideInfo}>
-                <View style={styles.rideRoute}>
-                  <Text style={styles.locationText}>{ride.from}</Text>
-                  <MaterialDesignIcons
-                    name="arrow-right"
-                    size={16}
-                    color={COLORS.textMuted}
-                  />
-                  <Text style={styles.locationText}>{ride.to}</Text>
-                </View>
-                <Text style={styles.rideDate}>{ride.date}</Text>
-              </View>
-              <Text style={styles.ridePrice}>{ride.price}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {isLoadingRides ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={COLORS.accent} />
             </View>
-          ))}
+          ) : recentRides.length === 0 ? (
+            <View style={styles.emptyRides}>
+              <MaterialDesignIcons
+                name="car-off"
+                size={32}
+                color={COLORS.textMuted}
+              />
+              <Text style={styles.emptyRidesText}>No past rides yet</Text>
+            </View>
+          ) : (
+            recentRides.map(ride => (
+              <TouchableOpacity
+                key={ride._id}
+                style={styles.rideCard}
+                onPress={() => navigation.navigate('RideDetails', { ride })}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rideIconContainer}>
+                  <MaterialDesignIcons
+                    name="car"
+                    size={20}
+                    color={COLORS.accent}
+                  />
+                </View>
+                <View style={styles.rideInfo}>
+                  <View style={styles.rideRoute}>
+                    <Text
+                      style={[styles.locationText, { width: '40%' }]}
+                      numberOfLines={1}
+                    >
+                      {ride.routeId?.from?.name ?? '—'}
+                    </Text>
+                    <MaterialDesignIcons
+                      name="arrow-right"
+                      size={16}
+                      color={COLORS.textMuted}
+                    />
+                    <Text style={styles.locationText} numberOfLines={1}>
+                      {ride.routeId?.to?.name ?? '—'}
+                    </Text>
+                  </View>
+                  <Text style={styles.rideDate}>
+                    {new Date(ride.createdAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </Text>
+                </View>
+                {/* <View style={[
+                  styles.rideStatusBadge,
+                  ride.rideStatus === 'Completed'
+                    ? styles.badgeCompleted
+                    : styles.badgeRejected,
+                ]}>
+                  <Text style={[
+                    styles.rideStatusText,
+                    ride.rideStatus === 'Completed'
+                      ? { color: COLORS.success }
+                      : { color: COLORS.error },
+                  ]}>
+                    {ride.rideStatus === 'Completed' ? 'Done' : 'Rejected'}
+                  </Text>
+                </View> */}
+              </TouchableOpacity>
+            ))
+          )}
         </View>
 
         <View style={styles.section}>
@@ -413,6 +484,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.text,
   },
+  seeAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  seeAllText: {
+    fontSize: FONTSIZES.sm,
+    fontWeight: '600',
+    color: COLORS.accent,
+  },
   addPlaceButton: {
     width: 32,
     height: 32,
@@ -421,6 +502,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyRides: {
+    alignItems: 'center',
+    paddingVertical: SIZES.xl,
+    gap: SIZES.sm,
+  },
+  emptyRidesText: {
+    fontSize: FONTSIZES.md,
+    color: COLORS.textMuted,
+  },
+  rideStatusBadge: {
+    paddingHorizontal: SIZES.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+  },
+  badgeCompleted: { backgroundColor: COLORS.success + '15' },
+  badgeRejected: { backgroundColor: COLORS.error + '10' },
+  rideStatusText: { fontSize: FONTSIZES.xs, fontWeight: '600' },
   loadingContainer: {
     paddingVertical: SIZES.lg,
     alignItems: 'center',
@@ -456,6 +554,7 @@ const styles = StyleSheet.create({
     fontSize: FONTSIZES.md,
     fontWeight: '500',
     color: COLORS.text,
+    width: '50%',
   },
   rideDate: {
     fontSize: FONTSIZES.sm,

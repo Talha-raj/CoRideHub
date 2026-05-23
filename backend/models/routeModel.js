@@ -35,16 +35,27 @@ const routeSchema = new mongoose.Schema(
     },
     departures: [
       {
-        date: { type: String, required: true }, // YYYY-MM-DD
-        time: { type: String, required: true }, // HH:MM (24-hour)
+        date:        { type: String,  required: true }, // YYYY-MM-DD
+        time:        { type: String,  required: true }, // HH:MM (24-hour)
+        isLeaving:   { type: Boolean, default: false },
+        isCompleted: { type: Boolean, default: false },
       },
     ],
+    driverLocation: {
+      latitude:  { type: Number },
+      longitude: { type: Number },
+      accuracy:  { type: Number },
+      speed:     { type: Number },
+      heading:   { type: Number },
+      timestamp: { type: Number },
+    },
     stops: [
-      { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Stop' 
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Stop'
       }
     ],
+    seatsLeft: { type: Number, default: 4 },
   },
   { timestamps: true },
 );

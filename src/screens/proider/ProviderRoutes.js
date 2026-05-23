@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,21 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import MaterialDesignIcons from '@react-native-vector-icons/material-design-icons';
 import { COLORS, FONTSIZES, SIZES, RADIUS, SHADOWS } from '../../constants/theme';
 import api from '../../config/api';
+import { useSession } from '../../store/useSession';
+import {
+  startLocationSharing,
+  stopLocationSharing,
+  saveTrackingInfo,
+  clearTrackingInfo,
+} from '../../services/locationService';
+import { startTracking, stopTracking, isTracking } from '../../services/trackingService';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,7 +53,7 @@ const format12h = time => {
   return `${h12}:${pad(m)} ${period}`;
 };
 
-// ─── Departure Modal ─────────────────────────────────────────────────────────
+// ─── Departure Modal ──────────────────────────────────────────────────────────
 
 const DepartureModal = ({ visible, onCancel, onConfirm, isConfirming }) => {
   const now = new Date();
@@ -50,7 +61,7 @@ const DepartureModal = ({ visible, onCancel, onConfirm, isConfirming }) => {
   const [hour, setHour] = useState(now.getHours());
   const [minute, setMinute] = useState(Math.round(now.getMinutes() / 5) * 5 % 60);
 
-  useEffect(() => {
+useEffect(() => {
     if (visible) {
       const n = new Date();
       setSelectedDate(n);
@@ -59,18 +70,10 @@ const DepartureModal = ({ visible, onCancel, onConfirm, isConfirming }) => {
     }
   }, [visible]);
 
-  const changeDay = delta =>
-    setSelectedDate(prev => {
-      const d = new Date(prev);
-      d.setDate(d.getDate() + delta);
-      return d;
-    });
-
-  const changeHour = delta => setHour(h => (h + delta + 24) % 24);
+  const changeDay    = delta => setSelectedDate(prev => { const d = new Date(prev); d.setDate(d.getDate() + delta); return d; });
+  const changeHour   = delta => setHour(h => (h + delta + 24) % 24);
   const changeMinute = delta => setMinute(m => (m + delta + 60) % 60);
-
-  const handleConfirm = () =>
-    onConfirm({ date: toDateStr(selectedDate), time: `${pad(hour)}:${pad(minute)}` });
+  const handleConfirm = () => onConfirm({ date: toDateStr(selectedDate), time: `${pad(hour)}:${pad(minute)}` });
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
@@ -91,9 +94,7 @@ const DepartureModal = ({ visible, onCancel, onConfirm, isConfirming }) => {
             <View style={mStyles.dateDisplay}>
               <Text style={mStyles.dateText}>{formatDateDisplay(selectedDate)}</Text>
               {isToday(selectedDate) && (
-                <View style={mStyles.todayPill}>
-                  <Text style={mStyles.todayText}>Today</Text>
-                </View>
+                <View style={mStyles.todayPill}><Text style={mStyles.todayText}>Today</Text></View>
               )}
             </View>
             <TouchableOpacity style={mStyles.arrowBtn} onPress={() => changeDay(1)}>
@@ -104,34 +105,17 @@ const DepartureModal = ({ visible, onCancel, onConfirm, isConfirming }) => {
           <Text style={mStyles.sectionLabel}>Time</Text>
           <View style={mStyles.timePicker}>
             <View style={mStyles.timeColumn}>
-              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeHour(1)}>
-                <MaterialDesignIcons name="chevron-up" size={28} color={COLORS.accent} />
-              </TouchableOpacity>
-              <View style={mStyles.timeBox}>
-                <Text style={mStyles.timeValue}>{pad(hour)}</Text>
-              </View>
-              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeHour(-1)}>
-                <MaterialDesignIcons name="chevron-down" size={28} color={COLORS.accent} />
-              </TouchableOpacity>
+              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeHour(1)}><MaterialDesignIcons name="chevron-up" size={28} color={COLORS.accent} /></TouchableOpacity>
+              <View style={mStyles.timeBox}><Text style={mStyles.timeValue}>{pad(hour)}</Text></View>
+              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeHour(-1)}><MaterialDesignIcons name="chevron-down" size={28} color={COLORS.accent} /></TouchableOpacity>
             </View>
-
             <Text style={mStyles.colon}>:</Text>
-
             <View style={mStyles.timeColumn}>
-              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeMinute(5)}>
-                <MaterialDesignIcons name="chevron-up" size={28} color={COLORS.accent} />
-              </TouchableOpacity>
-              <View style={mStyles.timeBox}>
-                <Text style={mStyles.timeValue}>{pad(minute)}</Text>
-              </View>
-              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeMinute(-5)}>
-                <MaterialDesignIcons name="chevron-down" size={28} color={COLORS.accent} />
-              </TouchableOpacity>
+              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeMinute(5)}><MaterialDesignIcons name="chevron-up" size={28} color={COLORS.accent} /></TouchableOpacity>
+              <View style={mStyles.timeBox}><Text style={mStyles.timeValue}>{pad(minute)}</Text></View>
+              <TouchableOpacity style={mStyles.timeArrow} onPress={() => changeMinute(-5)}><MaterialDesignIcons name="chevron-down" size={28} color={COLORS.accent} /></TouchableOpacity>
             </View>
-
-            <View style={mStyles.periodBox}>
-              <Text style={mStyles.periodText}>{hour >= 12 ? 'PM' : 'AM'}</Text>
-            </View>
+            <View style={mStyles.periodBox}><Text style={mStyles.periodText}>{hour >= 12 ? 'PM' : 'AM'}</Text></View>
           </View>
 
           <View style={mStyles.preview}>
@@ -157,8 +141,8 @@ const DepartureModal = ({ visible, onCancel, onConfirm, isConfirming }) => {
                 <ActivityIndicator color={COLORS.white} size="small" />
               ) : (
                 <>
-                  <MaterialDesignIcons name="check" size={18} color={COLORS.white} />
-                  <Text style={mStyles.confirmText}>Confirm</Text>
+                  <MaterialDesignIcons name="car-arrow-right" size={18} color={COLORS.white} />
+                  <Text style={mStyles.confirmText}>Start Leaving</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -169,26 +153,25 @@ const DepartureModal = ({ visible, onCancel, onConfirm, isConfirming }) => {
   );
 };
 
-// ─── screen ───────────────────────────────────────────────────────────────────
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 const ProviderRoutes = ({ navigation }) => {
   const [routes, setRoutes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLeaving, setIsLeaving] = useState({});
   const [showDepartureModal, setShowDepartureModal] = useState(false);
   const [activeRouteId, setActiveRouteId] = useState(null);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [completingRouteId, setCompletingRouteId] = useState(null);
+
+  const { activeTrackingRouteId, setActiveTrackingRouteId } = useSession();
+
+  // ── Fetch routes ─────────────────────────────────────────────────────────────
 
   const fetchRoutes = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await api.get('/routes');
-      if (res.data.success) {
-        setRoutes(res.data.routes);
-        const leavingState = {};
-        res.data.routes.forEach(r => { leavingState[r._id] = r.isLeaving; });
-        setIsLeaving(leavingState);
-      }
+      if (res.data.success) setRoutes(res.data.routes);
     } catch (err) {
       console.log('Error fetching routes:', err);
     } finally {
@@ -196,9 +179,33 @@ const ProviderRoutes = ({ navigation }) => {
     }
   }, []);
 
-  useEffect(() => { fetchRoutes(); }, [fetchRoutes]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchRoutes();
+    }, [fetchRoutes]),
+  );
+
+  // Reset stale tracking state that survived an app restart (GPS is not running)
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTrackingRouteId && !isTracking()) {
+        setActiveTrackingRouteId(null);
+      }
+    }, [activeTrackingRouteId, setActiveTrackingRouteId]),
+  );
+
+  // ── Start Leaving ────────────────────────────────────────────────────────────
 
   const handleStartLeaving = routeId => {
+    // Guard: only one active departure at a time
+    if (activeTrackingRouteId) {
+      const activeRoute = routes.find(r => r._id === activeTrackingRouteId);
+      Alert.alert(
+        'Route Already Active',
+        `"${activeRoute?.routeName || 'Another route'}" is currently active. Complete it before starting a new departure.`,
+      );
+      return;
+    }
     setActiveRouteId(routeId);
     setShowDepartureModal(true);
   };
@@ -207,37 +214,95 @@ const ProviderRoutes = ({ navigation }) => {
     if (!activeRouteId) return;
     setIsConfirming(true);
     try {
-      const res = await api.post(`/routes/${activeRouteId}/departure`, { date, time });
-      if (res.data.success) {
-        setRoutes(prev => prev.map(r => r._id === activeRouteId ? res.data.route : r));
-        setIsLeaving(prev => ({ ...prev, [activeRouteId]: true }));
-        setShowDepartureModal(false);
-        setActiveRouteId(null);
+      const res = await api.post(`/routes/${activeRouteId}/departure`, {
+        date,
+        time,
+        isLeaving: true,
+      });
+      if (!res.data.success) throw new Error('Server returned failure');
+
+      const updatedRoute = res.data.route;
+      setRoutes(prev => prev.map(r => r._id === activeRouteId ? updatedRoute : r));
+      setShowDepartureModal(false);
+
+      // Register module-level callbacks + connect socket first, then start GPS
+      await startTracking(activeRouteId);
+      const granted = await startLocationSharing();
+      if (!granted) {
+        stopTracking(activeRouteId);
+        Alert.alert(
+          'Permission Required',
+          'Location permission is required to share your live position with riders.',
+        );
+        return;
       }
+
+      // Persist routeId + token to native storage so the foreground service
+      // (Android) / background CLLocationManager (iOS) can POST directly to the
+      // backend even when the JS thread is suspended or the process is killed.
+      try {
+        const raw   = await AsyncStorage.getItem('auth-storage');
+        const token = raw ? JSON.parse(raw)?.state?.user?.token : null;
+        const host  = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+        if (token) saveTrackingInfo(activeRouteId, token, `http://${host}:5000`);
+      } catch (_) {}
+
+      setActiveTrackingRouteId(activeRouteId);
+      setActiveRouteId(null);
+
+      Alert.alert(
+        'Departure Started',
+        'Live location tracking is now active. Riders can see your position.',
+        [{ text: 'OK' }],
+      );
     } catch (err) {
-      Alert.alert('Error', 'Failed to schedule departure. Please try again.');
+      Alert.alert('Error', err.response?.data?.message || 'Failed to start departure. Please try again.');
     } finally {
       setIsConfirming(false);
     }
   };
 
-  const handleCancelLeaving = async routeId => {
-    try {
-      const res = await api.patch(`/routes/${routeId}/leaving`);
-      if (res.data.success) {
-        setIsLeaving(prev => ({ ...prev, [routeId]: res.data.route.isLeaving }));
-        setRoutes(prev => prev.map(r => r._id === routeId ? res.data.route : r));
-      }
-    } catch (err) {
-      console.log('Error updating leaving status:', err);
-    }
-  };
+  // ── Complete Departure ────────────────────────────────────────────────────────
+
+  const handleCompleteRoute = useCallback(routeId => {
+    Alert.alert(
+      'Complete Route',
+      'This will stop live location tracking and mark the departure as completed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete',
+          style: 'default',
+          onPress: async () => {
+            setCompletingRouteId(routeId);
+            try {
+              await stopLocationSharing();
+              stopTracking(routeId);
+              clearTrackingInfo();
+
+              const res = await api.patch(`/routes/${routeId}/departure/complete`);
+              if (!res.data.success) throw new Error('Server returned failure');
+
+              setActiveTrackingRouteId(null);
+              setRoutes(prev => prev.map(r => r._id === routeId ? res.data.route : r));
+            } catch (err) {
+              Alert.alert('Error', err.response?.data?.message || 'Failed to complete route.');
+              // Restore tracking state if backend call failed
+            } finally {
+              setCompletingRouteId(null);
+            }
+          },
+        },
+      ],
+    );
+  }, [setActiveTrackingRouteId]);
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   const todayStr = toDateStr(new Date());
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <MaterialDesignIcons name="arrow-left" size={24} color={COLORS.text} />
@@ -247,6 +312,15 @@ const ProviderRoutes = ({ navigation }) => {
           <MaterialDesignIcons name="plus" size={22} color={COLORS.accent} />
         </TouchableOpacity>
       </View>
+
+      {/* Active tracking banner */}
+      {activeTrackingRouteId && (
+        <View style={styles.trackingBanner}>
+          <View style={styles.trackingDot} />
+          <Text style={styles.trackingBannerText}>Live tracking active</Text>
+          <MaterialDesignIcons name="broadcast" size={16} color={COLORS.white} />
+        </View>
+      )}
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {isLoading ? (
@@ -258,30 +332,51 @@ const ProviderRoutes = ({ navigation }) => {
             <MaterialDesignIcons name="route" size={48} color={COLORS.textMuted} />
             <Text style={styles.emptyTitle}>No Routes Yet</Text>
             <Text style={styles.emptyText}>Create your first route to start offering rides</Text>
-            <TouchableOpacity
-              style={styles.addRouteButton}
-              onPress={() => navigation.navigate('AddRoute')}
-            >
+            <TouchableOpacity style={styles.addRouteButton} onPress={() => navigation.navigate('AddRoute')}>
               <MaterialDesignIcons name="plus" size={20} color={COLORS.white} />
               <Text style={styles.addRouteButtonText}>Add Route</Text>
             </TouchableOpacity>
           </View>
         ) : (
           routes.map(route => {
-            const leaving = isLeaving[route._id];
+            const isThisLeaving = route._id === activeTrackingRouteId || route.isLeaving;
+            const isCompleting  = completingRouteId === route._id;
             const todayDepartures = (route.departures || []).filter(d => d.date === todayStr);
+            const activeDeparture = todayDepartures.find(d => d.isLeaving);
+            const isCompleted     = activeDeparture?.isCompleted;
+
             return (
-              <View key={route._id} style={styles.routeCard}>
+              <View
+                key={route._id}
+                style={[styles.routeCard, isThisLeaving && styles.routeCardActive]}
+              >
+                {/* Route header */}
                 <View style={styles.routeHeader}>
                   <Text style={styles.routeName}>{route.routeName}</Text>
-                  <View style={[styles.statusBadge, leaving ? styles.statusLeaving : styles.statusActive]}>
-                    <View style={[styles.statusDot, leaving ? styles.statusDotLeaving : styles.statusDotActive]} />
-                    <Text style={[styles.statusText, leaving ? styles.statusTextLeaving : styles.statusTextActive]}>
-                      {leaving ? 'Leaving' : 'Active'}
+                  <View style={[
+                    styles.statusBadge,
+                    isCompleted   ? styles.statusCompleted :
+                    isThisLeaving ? styles.statusLeaving   :
+                                    styles.statusActive,
+                  ]}>
+                    <View style={[
+                      styles.statusDot,
+                      isCompleted   ? styles.statusDotCompleted :
+                      isThisLeaving ? styles.statusDotLeaving   :
+                                      styles.statusDotActive,
+                    ]} />
+                    <Text style={[
+                      styles.statusText,
+                      isCompleted   ? styles.statusTextCompleted :
+                      isThisLeaving ? styles.statusTextLeaving   :
+                                      styles.statusTextActive,
+                    ]}>
+                      {isCompleted ? 'Completed' : isThisLeaving ? 'Leaving' : 'Active'}
                     </Text>
                   </View>
                 </View>
 
+                {/* Route path */}
                 <View style={styles.routePath}>
                   <View style={styles.routeIndicator}>
                     <View style={styles.dot} />
@@ -294,6 +389,7 @@ const ProviderRoutes = ({ navigation }) => {
                   </View>
                 </View>
 
+                {/* Today's departures */}
                 {todayDepartures.length > 0 ? (
                   <View style={styles.departureRow}>
                     <MaterialDesignIcons name="clock-fast" size={14} color={COLORS.accent} />
@@ -309,21 +405,42 @@ const ProviderRoutes = ({ navigation }) => {
                   </View>
                 )}
 
-                <TouchableOpacity
-                  style={[styles.leavingButton, leaving && styles.leavingButtonActive]}
-                  onPress={() =>
-                    leaving ? handleCancelLeaving(route._id) : handleStartLeaving(route._id)
-                  }
-                >
-                  <MaterialDesignIcons
-                    name={leaving ? 'car' : 'car-side'}
-                    size={18}
-                    color={COLORS.white}
-                  />
-                  <Text style={styles.leavingButtonText}>
-                    {leaving ? 'On the Way (Cancel)' : 'Start Leaving'}
-                  </Text>
-                </TouchableOpacity>
+                {/* Action buttons */}
+                <View style={styles.buttonRow}>
+                  {!isThisLeaving && !isCompleted && (
+                    <TouchableOpacity
+                      style={styles.startButton}
+                      onPress={() => handleStartLeaving(route._id)}
+                    >
+                      <MaterialDesignIcons name="car-arrow-right" size={18} color={COLORS.white} />
+                      <Text style={styles.startButtonText}>Start Leaving</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {isThisLeaving && !isCompleted && (
+                    <TouchableOpacity
+                      style={[styles.completeButton, isCompleting && styles.buttonDisabled]}
+                      onPress={() => handleCompleteRoute(route._id)}
+                      disabled={isCompleting}
+                    >
+                      {isCompleting ? (
+                        <ActivityIndicator color={COLORS.white} size="small" />
+                      ) : (
+                        <>
+                          <MaterialDesignIcons name="flag-checkered" size={18} color={COLORS.white} />
+                          <Text style={styles.completeButtonText}>Complete</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {isCompleted && (
+                    <View style={styles.completedBadge}>
+                      <MaterialDesignIcons name="check-decagram" size={18} color={COLORS.success} />
+                      <Text style={styles.completedBadgeText}>Departure Completed</Text>
+                    </View>
+                  )}
+                </View>
               </View>
             );
           })
@@ -340,7 +457,7 @@ const ProviderRoutes = ({ navigation }) => {
   );
 };
 
-// ─── styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
@@ -355,6 +472,24 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.md },
   headerTitle: { flex: 1, fontSize: FONTSIZES.lg, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
   addBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+
+  trackingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SIZES.sm,
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: SIZES.lg,
+    paddingVertical: SIZES.sm,
+  },
+  trackingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.white,
+    opacity: 0.9,
+  },
+  trackingBannerText: { flex: 1, fontSize: FONTSIZES.sm, fontWeight: '600', color: COLORS.white },
+
   content: { padding: SIZES.lg, gap: SIZES.md },
   loadingContainer: { paddingVertical: SIZES.xxl, alignItems: 'center' },
 
@@ -386,6 +521,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOWS.small,
   },
+  routeCardActive: {
+    borderColor: COLORS.accent + '60',
+    // backgroundColor: COLORS.accent + '06',
+  },
   routeHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -393,6 +532,7 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.md,
   },
   routeName: { fontSize: FONTSIZES.lg, fontWeight: '600', color: COLORS.text, flex: 1 },
+
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -401,14 +541,17 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     gap: SIZES.xs,
   },
-  statusActive: { backgroundColor: COLORS.success + '15' },
-  statusLeaving: { backgroundColor: COLORS.warning + '15' },
+  statusActive:    { backgroundColor: COLORS.success   + '15' },
+  statusLeaving:   { backgroundColor: COLORS.warning   + '15' },
+  statusCompleted: { backgroundColor: COLORS.success   + '15' },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusDotActive: { backgroundColor: COLORS.success },
-  statusDotLeaving: { backgroundColor: COLORS.warning },
+  statusDotActive:    { backgroundColor: COLORS.success },
+  statusDotLeaving:   { backgroundColor: COLORS.warning },
+  statusDotCompleted: { backgroundColor: COLORS.success },
   statusText: { fontSize: FONTSIZES.sm, fontWeight: '500' },
-  statusTextActive: { color: COLORS.success },
-  statusTextLeaving: { color: COLORS.warning },
+  statusTextActive:    { color: COLORS.success },
+  statusTextLeaving:   { color: COLORS.warning },
+  statusTextCompleted: { color: COLORS.success },
 
   routePath: { flexDirection: 'row', marginBottom: SIZES.sm },
   routeIndicator: { alignItems: 'center', marginRight: SIZES.sm, marginTop: 4 },
@@ -428,11 +571,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: SIZES.md,
   },
-  departureLabel: { fontSize: FONTSIZES.sm, fontWeight: '600', color: COLORS.accent },
+  departureLabel:  { fontSize: FONTSIZES.sm, fontWeight: '600', color: COLORS.accent },
   departureValues: { fontSize: FONTSIZES.sm, color: COLORS.text, fontWeight: '500', flex: 1 },
-  departureNone: { fontSize: FONTSIZES.sm, color: COLORS.textMuted, flex: 1 },
+  departureNone:   { fontSize: FONTSIZES.sm, color: COLORS.textMuted, flex: 1 },
 
-  leavingButton: {
+  buttonRow: { gap: SIZES.sm },
+
+  startButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -441,144 +586,64 @@ const styles = StyleSheet.create({
     paddingVertical: SIZES.sm,
     gap: SIZES.sm,
   },
-  leavingButtonActive: { backgroundColor: COLORS.warning },
-  leavingButtonText: { color: COLORS.white, fontSize: FONTSIZES.sm, fontWeight: '600' },
+  startButtonText: { color: COLORS.white, fontSize: FONTSIZES.sm, fontWeight: '600' },
+
+  completeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.success,
+    borderRadius: RADIUS.md,
+    paddingVertical: SIZES.sm,
+    gap: SIZES.sm,
+    ...SHADOWS.small,
+  },
+  completeButtonText: { color: COLORS.white, fontSize: FONTSIZES.sm, fontWeight: '700' },
+
+  buttonDisabled: { opacity: 0.6 },
+
+  completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SIZES.sm,
+    backgroundColor: COLORS.success + '12',
+    borderRadius: RADIUS.md,
+    paddingVertical: SIZES.sm,
+  },
+  completedBadgeText: { fontSize: FONTSIZES.sm, fontWeight: '600', color: COLORS.success },
 });
 
 // ─── Modal Styles ─────────────────────────────────────────────────────────────
 
 const mStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SIZES.lg,
-  },
-  sheet: {
-    width: '100%',
-    backgroundColor: COLORS.background,
-    borderRadius: RADIUS.xl,
-    padding: SIZES.lg,
-    ...SHADOWS.large,
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: SIZES.lg },
+  sheet: { width: '100%', backgroundColor: COLORS.background, borderRadius: RADIUS.xl, padding: SIZES.lg, ...SHADOWS.large },
   header: { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm, marginBottom: SIZES.lg },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.accent + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  headerIcon: { width: 40, height: 40, borderRadius: RADIUS.md, backgroundColor: COLORS.accent + '15', alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: FONTSIZES.xl, fontWeight: '700', color: COLORS.text },
-  sectionLabel: {
-    fontSize: FONTSIZES.sm,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: SIZES.sm,
-  },
-  datePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingVertical: SIZES.sm,
-    paddingHorizontal: SIZES.sm,
-    marginBottom: SIZES.lg,
-  },
-  arrowBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.border,
-  },
+  sectionLabel: { fontSize: FONTSIZES.sm, fontWeight: '600', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SIZES.sm },
+  datePicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.surface, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, paddingVertical: SIZES.sm, paddingHorizontal: SIZES.sm, marginBottom: SIZES.lg },
+  arrowBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.sm, backgroundColor: COLORS.border },
   dateDisplay: { alignItems: 'center', flex: 1 },
   dateText: { fontSize: FONTSIZES.md, fontWeight: '600', color: COLORS.text },
-  todayPill: {
-    marginTop: 3,
-    backgroundColor: COLORS.accent + '20',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: RADIUS.full,
-  },
+  todayPill: { marginTop: 3, backgroundColor: COLORS.accent + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.full },
   todayText: { fontSize: FONTSIZES.xs, color: COLORS.accent, fontWeight: '600' },
-  timePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SIZES.md,
-    marginBottom: SIZES.lg,
-  },
+  timePicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SIZES.md, marginBottom: SIZES.lg },
   timeColumn: { alignItems: 'center', gap: SIZES.xs },
-  timeArrow: {
-    width: 44,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.accent + '10',
-  },
-  timeBox: {
-    width: 72,
-    height: 60,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    borderWidth: 2,
-    borderColor: COLORS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  timeArrow: { width: 44, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.sm, backgroundColor: COLORS.accent + '10' },
+  timeBox: { width: 72, height: 60, backgroundColor: COLORS.surface, borderRadius: RADIUS.md, borderWidth: 2, borderColor: COLORS.accent, alignItems: 'center', justifyContent: 'center' },
   timeValue: { fontSize: FONTSIZES.xxxl, fontWeight: '700', color: COLORS.text },
   colon: { fontSize: FONTSIZES.xxxl, fontWeight: '700', color: COLORS.textMuted, marginBottom: 8 },
-  periodBox: {
-    backgroundColor: COLORS.accent,
-    paddingHorizontal: SIZES.sm,
-    paddingVertical: SIZES.xs,
-    borderRadius: RADIUS.sm,
-    alignSelf: 'center',
-  },
+  periodBox: { backgroundColor: COLORS.accent, paddingHorizontal: SIZES.sm, paddingVertical: SIZES.xs, borderRadius: RADIUS.sm, alignSelf: 'center' },
   periodText: { fontSize: FONTSIZES.sm, fontWeight: '700', color: COLORS.white },
-  preview: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    padding: SIZES.md,
-    marginBottom: SIZES.lg,
-  },
+  preview: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: SIZES.md, marginBottom: SIZES.lg },
   previewText: { flex: 1, fontSize: FONTSIZES.sm, color: COLORS.textSecondary, lineHeight: 20 },
   previewHighlight: { fontWeight: '600', color: COLORS.text },
   actions: { flexDirection: 'row', gap: SIZES.md },
-  cancelBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  cancelBtn: { flex: 1, height: 48, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
   cancelText: { fontSize: FONTSIZES.md, color: COLORS.textSecondary, fontWeight: '500' },
-  confirmBtn: {
-    flex: 2,
-    height: 48,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.accent,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SIZES.xs,
-    ...SHADOWS.small,
-  },
+  confirmBtn: { flex: 2, height: 48, borderRadius: RADIUS.md, backgroundColor: COLORS.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SIZES.xs, ...SHADOWS.small },
   confirmBtnDisabled: { opacity: 0.6 },
   confirmText: { fontSize: FONTSIZES.md, fontWeight: '600', color: COLORS.white },
 });
